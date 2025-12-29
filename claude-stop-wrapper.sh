@@ -1,10 +1,108 @@
 #!/bin/bash
-# Wrapper that feeds stdin to both focusbase AND ClaudeNotifier
+# =============================================================================
+# Claude Code Stop Hook Wrapper
+# =============================================================================
+# Feeds stdin to multiple downstream hooks (focusbase + ClaudeNotifier)
+#
+# HOOK BEST PRACTICES (learn from past bugs):
+# -------------------------------------------
+# 1. NEVER trust stdin - /clear and escape may provide no input, causing
+#    `cat` to block forever. Always use timeouts.
+#
+# 2. ALWAYS validate JSON - Interrupted sessions may send empty or malformed
+#    JSON. Validate before processing, exit 0 on invalid input.
+#
+# 3. ALWAYS exit 0 - Non-zero exits block Claude Code. Even on errors, exit 0
+#    and log the error elsewhere if needed.
+#
+# 4. RUN SUB-HOOKS IN BACKGROUND - If one hook hangs, it shouldn't block others.
+#    Use watchdog processes to kill stragglers.
+#
+# 5. CLEAN UP RESOURCES - Use `trap` to remove temp files and kill child
+#    processes on exit.
+#
+# 6. FAIL FAST - Hooks are in the critical path. Prefer quick failure over
+#    hanging. A 2-5 second timeout is reasonable.
+#
+# DEBUGGING:
+# ----------
+# Uncomment the following line to log all hook invocations:
+# exec >> /tmp/claude-stop-hook.log 2>&1; set -x
+# =============================================================================
 
-JSON_INPUT=$(cat)
+set -o pipefail
 
-# Run focusbase hook
-echo "$JSON_INPUT" | /Users/enriqueleal-sierra/.focusbase/bin/focusbase-claude-stop.sh
+# -----------------------------------------------------------------------------
+# STDIN READ WITH TIMEOUT
+# -----------------------------------------------------------------------------
+# Problem: `cat` blocks forever if stdin is empty (happens on /clear, escape)
+# Solution: Run cat in background, kill after timeout, read from temp file
+# Why temp file: Variables set in subshells don't propagate to parent
 
-# Run ClaudeNotifier hook
-echo "$JSON_INPUT" | "$(dirname "$0")/claude-notify-hook.sh"
+TEMP_FILE=$(mktemp)
+trap "rm -f '$TEMP_FILE'" EXIT  # Always clean up temp files
+
+cat > "$TEMP_FILE" &
+CAT_PID=$!
+
+# Watchdog kills cat after 2 seconds if it's still blocking
+(sleep 2; kill $CAT_PID 2>/dev/null) &
+TIMEOUT_PID=$!
+
+wait $CAT_PID 2>/dev/null
+kill $TIMEOUT_PID 2>/dev/null
+wait $TIMEOUT_PID 2>/dev/null
+
+JSON_INPUT=$(cat "$TEMP_FILE" 2>/dev/null)
+
+# -----------------------------------------------------------------------------
+# INPUT VALIDATION
+# -----------------------------------------------------------------------------
+# Problem: Malformed JSON causes jq errors and unexpected behavior downstream
+# Solution: Validate JSON structure before passing to sub-hooks
+
+if [[ -z "$JSON_INPUT" ]]; then
+    # Empty input - likely /clear or interrupted session
+    exit 0
+fi
+
+if ! echo "$JSON_INPUT" | jq -e . >/dev/null 2>&1; then
+    # Malformed JSON - log and exit gracefully
+    # echo "[$(date)] Malformed JSON received" >> /tmp/claude-hook-errors.log
+    exit 0
+fi
+
+# -----------------------------------------------------------------------------
+# PARALLEL HOOK EXECUTION WITH WATCHDOG
+# -----------------------------------------------------------------------------
+# Problem: Sequential hooks mean one hanging blocks everything
+# Solution: Run each hook in background, use watchdog to kill after timeout
+#
+# Why 5 seconds: Long enough for normal operations, short enough to not block
+# the user noticeably. Adjust based on your hooks' typical runtime.
+
+(echo "$JSON_INPUT" | /Users/enriqueleal-sierra/.focusbase/bin/focusbase-claude-stop.sh) &
+PID1=$!
+
+(echo "$JSON_INPUT" | "$(dirname "$0")/claude-notify-hook.sh") &
+PID2=$!
+
+# Watchdog: Kill any hooks still running after 5 seconds
+(
+    sleep 5
+    kill $PID1 $PID2 2>/dev/null
+) &
+WATCHDOG=$!
+
+# Wait for hooks to complete (or be killed by watchdog)
+wait $PID1 $PID2 2>/dev/null
+
+# Clean up watchdog if hooks finished early
+kill $WATCHDOG 2>/dev/null
+
+# -----------------------------------------------------------------------------
+# ALWAYS EXIT 0
+# -----------------------------------------------------------------------------
+# Non-zero exit codes block Claude Code from continuing. Even if something
+# failed above, we exit 0 to not disrupt the user's workflow.
+exit 0
