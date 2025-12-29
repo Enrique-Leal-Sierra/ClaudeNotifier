@@ -64,6 +64,20 @@ if [ -L "$INSTALL_PATH" ] || [ -f "$INSTALL_PATH" ]; then
 fi
 ln -s "$APP_BUNDLE/Contents/MacOS/$APP_NAME" "$INSTALL_PATH"
 
+# Create symlink for toggle command
+TOGGLE_PATH="/usr/local/bin/claude-notifications"
+if [ -L "$TOGGLE_PATH" ] || [ -f "$TOGGLE_PATH" ]; then
+    rm "$TOGGLE_PATH"
+fi
+ln -s "$SCRIPT_DIR/claude-notifications.sh" "$TOGGLE_PATH"
+
+# Create symlink for music toggle command
+MUSIC_PATH="/usr/local/bin/claude-music"
+if [ -L "$MUSIC_PATH" ] || [ -f "$MUSIC_PATH" ]; then
+    rm "$MUSIC_PATH"
+fi
+ln -s "$SCRIPT_DIR/claude-music.sh" "$MUSIC_PATH"
+
 echo ""
 echo "Build complete!"
 echo "App bundle: $APP_BUNDLE"
