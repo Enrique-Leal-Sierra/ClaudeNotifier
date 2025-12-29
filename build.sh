@@ -54,6 +54,9 @@ else
     echo "Warning: Icon not found at $ICON_SOURCE"
 fi
 
+# Codesign the app bundle (required for notifications)
+codesign --force --deep --sign - "$APP_BUNDLE"
+
 # Create symlink in /usr/local/bin for easy access
 INSTALL_PATH="/usr/local/bin/claude-notify"
 if [ -L "$INSTALL_PATH" ] || [ -f "$INSTALL_PATH" ]; then
