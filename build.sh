@@ -71,6 +71,13 @@ if [ -L "$TOGGLE_PATH" ] || [ -f "$TOGGLE_PATH" ]; then
 fi
 ln -s "$SCRIPT_DIR/claude-notifications.sh" "$TOGGLE_PATH"
 
+# Create symlink for brainrot-sleep (1 per day snooze)
+SLEEP_PATH="/usr/local/bin/brainrot-sleep"
+if [ -L "$SLEEP_PATH" ] || [ -f "$SLEEP_PATH" ]; then
+    rm "$SLEEP_PATH"
+fi
+ln -s "$SCRIPT_DIR/brainrot-sleep.sh" "$SLEEP_PATH"
+
 echo ""
 echo "Build complete!"
 echo "App bundle: $APP_BUNDLE"
