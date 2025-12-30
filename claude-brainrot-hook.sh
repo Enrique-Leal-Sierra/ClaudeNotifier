@@ -3,7 +3,8 @@
 # Claude Code Brainrot Killer Hook
 # =============================================================================
 # Triggered by Claude Code's idle_prompt notification (after 60s idle).
-# Pauses media, warns user, then kills distracting apps after 60 more seconds.
+# Pauses media, warns user, then kills ALL apps after 5 more minutes.
+# MAXIMUM PENALTY MODE: Kills EVERYTHING. No mercy.
 #
 # HOOK CONFIG: Notification[idle_prompt]
 # =============================================================================
@@ -39,18 +40,18 @@ osascript -e 'set volume output muted true' 2>/dev/null
 echo "Sending notification..." >> "$LOG"
 "$SCRIPT_DIR/ClaudeNotifier.app/Contents/MacOS/ClaudeNotifier" \
   -title "Claude Code" \
-  -message "One minute to respond before brainrot killed"
+  -message "5 minutes to respond before ALL APPS KILLED"
 
 # -----------------------------------------------------------------------------
-# START KILL TIMER (60 seconds)
+# START KILL TIMER (5 minutes)
 # -----------------------------------------------------------------------------
 
-echo "Starting 60s kill timer" >> "$LOG"
+echo "Starting 5min kill timer" >> "$LOG"
 MY_TIMESTAMP=$(date +%s)
 echo "$MY_TIMESTAMP" > "$KILL_MARKER"
 
 (
-  sleep 60
+  sleep 300
 
   if [[ -f "$KILL_MARKER" ]]; then
     CURRENT_TIMESTAMP=$(cat "$KILL_MARKER" 2>/dev/null)
@@ -60,15 +61,23 @@ echo "$MY_TIMESTAMP" > "$KILL_MARKER"
     if [[ "$MY_TIMESTAMP" == "$CURRENT_TIMESTAMP" ]]; then
       rm -f "$KILL_MARKER" 2>/dev/null
 
-      # Force kill distracting apps
-      pkill -9 -x Safari
-      pkill -9 -x Spotify
-      pkill -9 -x VLC
-      pkill -9 -x Podcasts
+      # MAXIMUM PENALTY: Kill ALL apps. No exceptions. No mercy.
+      osascript <<'APPLESCRIPT' 2>/dev/null
+tell application "System Events"
+    set appList to name of every application process whose background only is false
+    repeat with appName in appList
+        try
+            do shell script "pkill -9 -x " & quoted form of (appName as text)
+        end try
+    end repeat
+end tell
+APPLESCRIPT
+      # Kill Finder too (it will auto-restart but closes all windows)
+      pkill -9 -x Finder
 
-      # Unmute after kill (brainrot sources are dead)
+      # Unmute after kill
       osascript -e 'set volume output muted false' 2>/dev/null
-      echo "$(date): Apps killed, audio unmuted" >> "$LOG"
+      echo "$(date): ALL APPS KILLED (maximum penalty), audio unmuted" >> "$LOG"
     else
       echo "$(date): Kill skipped (newer idle event exists: $CURRENT_TIMESTAMP vs $MY_TIMESTAMP)" >> "$LOG"
     fi
