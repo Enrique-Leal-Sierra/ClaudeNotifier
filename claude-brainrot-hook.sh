@@ -3,7 +3,7 @@
 # Claude Code Brainrot Killer Hook
 # =============================================================================
 # Triggered by Claude Code's idle_prompt notification (after 60s idle).
-# Pauses media, warns user, then kills ALL apps after 5 more minutes.
+# Warns user, then kills ALL apps after 5 more minutes.
 # MAXIMUM PENALTY MODE: Kills EVERYTHING. No mercy.
 #
 # HOOK CONFIG: Notification[idle_prompt]
@@ -25,13 +25,6 @@ if [[ -f "$SCRIPT_DIR/.notifications-disabled" ]]; then
 fi
 
 echo "Proceeding with brainrot hook" >> "$LOG"
-
-# -----------------------------------------------------------------------------
-# MUTE SYSTEM AUDIO
-# -----------------------------------------------------------------------------
-
-echo "Muting system audio..." >> "$LOG"
-osascript -e 'set volume output muted true' 2>/dev/null
 
 # -----------------------------------------------------------------------------
 # SEND WARNING NOTIFICATION
@@ -75,9 +68,7 @@ APPLESCRIPT
       # Kill Finder too (it will auto-restart but closes all windows)
       pkill -9 -x Finder
 
-      # Unmute after kill
-      osascript -e 'set volume output muted false' 2>/dev/null
-      echo "$(date): ALL APPS KILLED (maximum penalty), audio unmuted" >> "$LOG"
+      echo "$(date): ALL APPS KILLED (maximum penalty)" >> "$LOG"
     else
       echo "$(date): Kill skipped (newer idle event exists: $CURRENT_TIMESTAMP vs $MY_TIMESTAMP)" >> "$LOG"
     fi
