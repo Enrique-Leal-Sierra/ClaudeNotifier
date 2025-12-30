@@ -32,28 +32,19 @@
 
 set -o pipefail
 
+# Suppress output to prevent interference with Claude Code's terminal
+exec 1>/dev/null 2>/dev/null
+
 # -----------------------------------------------------------------------------
 # STDIN READ WITH TIMEOUT
 # -----------------------------------------------------------------------------
-# Problem: `cat` blocks forever if stdin is empty (happens on /clear, escape)
-# Solution: Run cat in background, kill after timeout, read from temp file
-# Why temp file: Variables set in subshells don't propagate to parent
+# Use read -t for atomic stdin capture with timeout (no race conditions)
+# The || [[ -n "$line" ]] handles input without trailing newline
 
-TEMP_FILE=$(mktemp)
-trap "rm -f '$TEMP_FILE'" EXIT  # Always clean up temp files
-
-cat > "$TEMP_FILE" &
-CAT_PID=$!
-
-# Watchdog kills cat after 2 seconds if it's still blocking
-(sleep 2; kill $CAT_PID 2>/dev/null) &
-TIMEOUT_PID=$!
-
-wait $CAT_PID 2>/dev/null
-kill $TIMEOUT_PID 2>/dev/null
-wait $TIMEOUT_PID 2>/dev/null
-
-JSON_INPUT=$(cat "$TEMP_FILE" 2>/dev/null)
+JSON_INPUT=""
+while IFS= read -r -t 2 line || [[ -n "$line" ]]; do
+  JSON_INPUT+="$line"
+done
 
 # -----------------------------------------------------------------------------
 # INPUT VALIDATION
@@ -62,13 +53,12 @@ JSON_INPUT=$(cat "$TEMP_FILE" 2>/dev/null)
 # Solution: Validate JSON structure before passing to sub-hooks
 
 if [[ -z "$JSON_INPUT" ]]; then
-    # Empty input - likely /clear or interrupted session
+    # Empty input - likely /clear or interrupted session (escape)
     exit 0
 fi
 
 if ! echo "$JSON_INPUT" | jq -e . >/dev/null 2>&1; then
-    # Malformed JSON - log and exit gracefully
-    # echo "[$(date)] Malformed JSON received" >> /tmp/claude-hook-errors.log
+    # Malformed JSON - exit gracefully
     exit 0
 fi
 
